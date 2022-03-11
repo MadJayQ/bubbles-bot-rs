@@ -110,6 +110,7 @@ dependencies = [
  "async_once",
  "dotenv",
  "lazy_static",
+ "once_cell",
  "serenity",
  "sqlx",
  "tokio",

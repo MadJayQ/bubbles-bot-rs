@@ -14,7 +14,7 @@ use serenity::{
     framework::{
         standard::{
             macros::{command, group, hook},
-            CommandResult,
+            Args, CommandResult,
         },
         StandardFramework,
     },
@@ -61,26 +61,55 @@ async fn delay_action(ctx: &Context, msg: &Message) {
 
 #[command]
 #[bucket = "request"]
-async fn gold(ctx: &Context, msg: &Message) -> CommandResult {
-    msg.channel_id.say(&ctx.http, "Requesting gold!").await?;
+async fn gold(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let amount = args.single::<i64>()?;
+    // msg.channel_id.say(&ctx.http, format!("{:?} is requesting {} gold!", msg.author, amount)).await?;
+    let msg_result = msg
+        .channel_id
+        .send_message(&ctx.http, |m| {
+            m.embed(|e| {
+                e.title("Bank Request").description(format!(
+                    "{} is requesting {} gold!",
+                    &msg.author.name, amount
+                )).thumbnail("https://wow.zamimg.com/images/wow/icons/large/inv_misc_coin_02.jpg")
+                .footer(|f| f.text("Please wait for officer approval"))
+            })
+        })
+        .await;
+
+    if let Err(why) = msg_result {
+        println!("Error sending msg: {:?}", why);
+    }
+
+    let user = database::RequestUser{
+        name: String::from(&msg.author.name),
+        user_id: msg.author.id.0 as i64
+    };
+
+    if let Some(db) = database::DATABASE.get() {
+        db.add_gold_request(amount, user).await;
+    }
 
     Ok(())
 }
 
 #[command]
 #[bucket = "request"]
-async fn materials(ctx: &Context, msg: &Message) -> CommandResult {
+async fn materials(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     msg.channel_id
-        .say(&ctx.http, "Requesting materials!")
+        .say(&ctx.http, format!("Requesting materials! {:?}", args))
         .await?;
     let db = &database::DATABASE;
-    
+    // let entry = sqlx::query!
+
     Ok(())
 }
 
 #[command]
 async fn about(ctx: &Context, msg: &Message) -> CommandResult {
-    msg.channel_id.say(&ctx.http, "This is a small test-bot! : )").await?;
+    msg.channel_id
+        .say(&ctx.http, "This is a small test-bot! : )")
+        .await?;
 
     Ok(())
 }
@@ -109,6 +138,11 @@ async fn main() {
     // `RUST_LOG` to `debug`.
     tracing_subscriber::fmt::init();
 
+    let database = std::thread::spawn(|| {
+        database::connect()
+    }).join().expect("Thread panicked!");
+    database::DATABASE.set(database.await).unwrap();
+
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
 
     let http = Http::new_with_token(&token);
@@ -132,9 +166,9 @@ async fn main() {
         .bucket("request", |b| b.delay(5))
         .await
         .group(&REQUEST_GROUP)
-        .group(&GENERAL_GROUP); 
+        .group(&GENERAL_GROUP);
 
-    // let db = 
+    // let db =
 
     let mut client = Client::builder(&token)
         .framework(framework)
